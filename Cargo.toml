@@ -12,7 +12,7 @@ lto = "off"
 lz-str = "0.2"
 hyper = "0.14.28"
 hyper-rustls = "0.24.2"
-topaz-tak = {git = "https://github.com/Jakur/topaz-tak", rev = "4980d5b" }
+topaz-tak = {git = "https://github.com/Jakur/topaz-tak", rev = "a89cc6d", default-features = false  }
 anyhow = "1"
 dotenv = "0.15"
 regex = "1.5"

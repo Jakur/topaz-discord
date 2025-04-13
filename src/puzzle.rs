@@ -2,7 +2,7 @@ use super::Board6;
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use std::fs::read_to_string;
-use topaz_tak::{generate_all_moves, search::proof::TinueSearch, GameMove, Position, TakBoard};
+use topaz_tak::{generate_all_moves, proof::TinueSearch, GameMove, Position, TakBoard};
 
 pub fn new_puzzle(id: usize) -> Option<PuzzleState> {
     // Todo make sure id is valid

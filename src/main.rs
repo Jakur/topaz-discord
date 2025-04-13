@@ -10,7 +10,7 @@ use std::io::Write;
 use std::str::FromStr;
 use std::{env, time};
 use topaz_tak::board::{Board5, Board6, Board7};
-use topaz_tak::search::proof::TinueSearch;
+use topaz_tak::proof::TinueSearch;
 use topaz_tak::{generate_all_moves, Position};
 use topaz_tak::{Color, GameMove, TakBoard, TakGame};
 
@@ -21,10 +21,10 @@ use serenity::prelude::*;
 use hyper_rustls::HttpsConnector;
 use std::sync::{Arc, Mutex};
 
-mod play;
+// mod play;
 mod puzzle;
 
-use play::AsyncGameState;
+// use play::AsyncGameState;
 
 lazy_static! {
     static ref HTTP_CLIENT: hyper::Client<HttpsConnector<hyper::client::HttpConnector>> = {
@@ -43,8 +43,8 @@ lazy_static! {
 
 static TOPAZ_VERSION: OnceCell<String> = OnceCell::new();
 static PUZZLE_CHANNEL: OnceCell<ChannelId> = OnceCell::new();
-static ACTIVE_GAMES: Lazy<Arc<Mutex<HashMap<ChannelId, AsyncGameState>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+// static ACTIVE_GAMES: Lazy<Arc<Mutex<HashMap<ChannelId, AsyncGameState>>>> =
+//     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 static SHORT_NAME: &'static str = "topazbot";
 pub const TOPAZ_ID: UserId = UserId::new(211376698778714123);
 pub const TAK_BOT_ID: UserId = UserId::new(793658103668539424);
@@ -68,57 +68,57 @@ impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
         let mut action = GameAction::None;
         {
-            let mut games = ACTIVE_GAMES.lock().unwrap();
-            if let Some(game) = games.get_mut(&msg.channel_id) {
-                if !game.is_dirty() && msg.author.id == TAK_BOT_ID {
-                    if let Some(board_data) = play::handle_link(&msg.content) {
-                        if let TakGame::Standard6(ref b) = board_data {
-                            dbg!(b);
-                        }
-                        game.set_board(board_data);
-                        action = GameAction::HandleMessage;
-                        game.set_dirty();
-                    } else {
-                        if msg.mentions_user_id(TOPAZ_ID) {
-                            game.needs_action();
-                        } else if msg.mentions.len() != 0 {
-                            game.waiting();
-                        }
-                        let split: Vec<_> = msg.content.split(" | ").collect();
-                        if let Some(data) = split.get(0) {
-                            if split.len() > 1 && PTN_MOVE.is_match(data) {
-                                match game.try_apply_move(data) {
-                                    Ok(()) => {
-                                        action = GameAction::HandleMessage;
-                                        game.set_dirty();
-                                    }
-                                    Err(e) => {
-                                        dbg!(e);
-                                        action = GameAction::RequestLink;
-                                    }
-                                }
-                            } else if game.is_topaz_move() {
-                                action = GameAction::HandleMessage;
-                                game.set_dirty();
-                            }
-                        }
-                    }
-                }
-            }
+            // let mut games = ACTIVE_GAMES.lock().unwrap();
+            // if let Some(game) = games.get_mut(&msg.channel_id) {
+            //     if !game.is_dirty() && msg.author.id == TAK_BOT_ID {
+            //         if let Some(board_data) = play::handle_link(&msg.content) {
+            //             if let TakGame::Standard6(ref b) = board_data {
+            //                 dbg!(b);
+            //             }
+            //             game.set_board(board_data);
+            //             action = GameAction::HandleMessage;
+            //             game.set_dirty();
+            //         } else {
+            //             if msg.mentions_user_id(TOPAZ_ID) {
+            //                 game.needs_action();
+            //             } else if msg.mentions.len() != 0 {
+            //                 game.waiting();
+            //             }
+            //             let split: Vec<_> = msg.content.split(" | ").collect();
+            //             if let Some(data) = split.get(0) {
+            //                 if split.len() > 1 && PTN_MOVE.is_match(data) {
+            //                     match game.try_apply_move(data) {
+            //                         Ok(()) => {
+            //                             action = GameAction::HandleMessage;
+            //                             game.set_dirty();
+            //                         }
+            //                         Err(e) => {
+            //                             dbg!(e);
+            //                             action = GameAction::RequestLink;
+            //                         }
+            //                     }
+            //                 } else if game.is_topaz_move() {
+            //                     action = GameAction::HandleMessage;
+            //                     game.set_dirty();
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
         }
         match action {
             // Hack to avoid locking across the blocking async calls
             GameAction::HandleMessage => {
                 {
-                    let mut game = ACTIVE_GAMES
-                        .lock()
-                        .unwrap()
-                        .get(&msg.channel_id)
-                        .unwrap()
-                        .get_copy();
-                    let channel = msg.channel_id;
-                    let _ = game.do_message(&context, msg).await;
-                    ACTIVE_GAMES.lock().unwrap().insert(channel, game);
+                    // let mut game = ACTIVE_GAMES
+                    //     .lock()
+                    //     .unwrap()
+                    //     .get(&msg.channel_id)
+                    //     .unwrap()
+                    //     .get_copy();
+                    // let channel = msg.channel_id;
+                    // let _ = game.do_message(&context, msg).await;
+                    // ACTIVE_GAMES.lock().unwrap().insert(channel, game);
                     return;
                 }
                 // let _ = game.do_message(context, msg).await;
@@ -285,54 +285,54 @@ impl EventHandler for Handler {
         //         .await;
         // }
     }
-    async fn ready(&self, c: Context, ready: Ready) {
-        tracing::debug!("{} is connected!", ready.user.name);
-        for g in ready.guilds {
-            let channels = c.http.get_channels(g.id).await;
-            if let Ok(channels) = channels {
-                for chan in channels {
-                    if chan.name().contains(SHORT_NAME) {
-                        let _ = add_channel(&c, &chan).await;
-                    }
-                }
-            }
-        }
-    }
+    // async fn ready(&self, c: Context, ready: Ready) {
+    //     tracing::debug!("{} is connected!", ready.user.name);
+    //     for g in ready.guilds {
+    //         let channels = c.http.get_channels(g.id).await;
+    //         if let Ok(channels) = channels {
+    //             for chan in channels {
+    //                 if chan.name().contains(SHORT_NAME) {
+    //                     let _ = add_channel(&c, &chan).await;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }
 
-async fn add_channel(context: &Context, chan: &GuildChannel) {
-    dbg!("New channel below!");
-    let mut game = AsyncGameState::default();
-    if let Some(message_id) = chan.last_message_id {
-        // Try to determine if it is our move or not
-        let get_messages = serenity::builder::GetMessages::new()
-            .around(message_id)
-            .limit(5);
-        let messages = chan.id.messages(&context.http, get_messages).await;
-        if let Ok(messages) = messages {
-            // This reads most recent first
-            for msg in messages {
-                if msg.author.id != TAK_BOT_ID {
-                    continue;
-                }
-                if msg.mentions_user_id(TOPAZ_ID) {
-                    game.needs_action();
-                    let _ = AsyncGameState::request_link(&context, chan.id).await;
-                    break;
-                } else if msg.mentions.len() != 0 {
-                    game.waiting();
-                    break;
-                }
-                dbg!(msg.content);
-            }
-            if game.is_unknown_state() {
-                let _ = AsyncGameState::request_redraw(&context, chan.id).await;
-            }
-        }
-    }
-    ACTIVE_GAMES.lock().unwrap().insert(chan.id, game);
-    dbg!(chan.name());
-}
+// async fn add_channel(context: &Context, chan: &GuildChannel) {
+//     dbg!("New channel below!");
+//     let mut game = AsyncGameState::default();
+//     if let Some(message_id) = chan.last_message_id {
+//         // Try to determine if it is our move or not
+//         let get_messages = serenity::builder::GetMessages::new()
+//             .around(message_id)
+//             .limit(5);
+//         let messages = chan.id.messages(&context.http, get_messages).await;
+//         if let Ok(messages) = messages {
+//             // This reads most recent first
+//             for msg in messages {
+//                 if msg.author.id != TAK_BOT_ID {
+//                     continue;
+//                 }
+//                 if msg.mentions_user_id(TOPAZ_ID) {
+//                     game.needs_action();
+//                     let _ = AsyncGameState::request_link(&context, chan.id).await;
+//                     break;
+//                 } else if msg.mentions.len() != 0 {
+//                     game.waiting();
+//                     break;
+//                 }
+//                 dbg!(msg.content);
+//             }
+//             if game.is_unknown_state() {
+//                 let _ = AsyncGameState::request_redraw(&context, chan.id).await;
+//             }
+//         }
+//     }
+//     ACTIVE_GAMES.lock().unwrap().insert(chan.id, game);
+//     dbg!(chan.name());
+// }
 
 fn get_size(game: &TakGame) -> usize {
     match game {
