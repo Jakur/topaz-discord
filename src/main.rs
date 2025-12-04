@@ -11,7 +11,9 @@ use std::str::FromStr;
 use std::{env, time};
 use topaz_tak::board::{Board5, Board6, Board7};
 use topaz_tak::proof::TinueSearch;
-use topaz_tak::{generate_all_moves, Position};
+use topaz_tak::search::SearchInfo;
+use topaz_tak::transposition_table::HashTable;
+use topaz_tak::{generate_all_moves, Position, TimeBank};
 use topaz_tak::{Color, GameMove, TakBoard, TakGame};
 
 use serenity::model::channel::ReactionType;
@@ -22,6 +24,7 @@ use hyper_rustls::HttpsConnector;
 use std::sync::{Arc, Mutex};
 
 // mod play;
+mod graph;
 mod puzzle;
 
 // use play::AsyncGameState;
@@ -39,13 +42,12 @@ lazy_static! {
     };
     static ref ACTIVE_PUZZLES: Arc<Mutex<HashMap<UserId, puzzle::PuzzleState>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    static ref WHITE_RE: Regex = Regex::new(r#"Player1 "(\w|\d)+""#).unwrap();
+    static ref BLACK_RE: Regex = Regex::new(r#"Player2 "(\w|\d)+""#).unwrap();
 }
 
 static TOPAZ_VERSION: OnceCell<String> = OnceCell::new();
 static PUZZLE_CHANNEL: OnceCell<ChannelId> = OnceCell::new();
-// static ACTIVE_GAMES: Lazy<Arc<Mutex<HashMap<ChannelId, AsyncGameState>>>> =
-//     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
-static SHORT_NAME: &'static str = "topazbot";
 pub const TOPAZ_ID: UserId = UserId::new(211376698778714123);
 pub const TAK_BOT_ID: UserId = UserId::new(793658103668539424);
 
@@ -66,74 +68,6 @@ impl EventHandler for Handler {
     //     }
     // }
     async fn message(&self, context: Context, msg: Message) {
-        let mut action = GameAction::None;
-        {
-            // let mut games = ACTIVE_GAMES.lock().unwrap();
-            // if let Some(game) = games.get_mut(&msg.channel_id) {
-            //     if !game.is_dirty() && msg.author.id == TAK_BOT_ID {
-            //         if let Some(board_data) = play::handle_link(&msg.content) {
-            //             if let TakGame::Standard6(ref b) = board_data {
-            //                 dbg!(b);
-            //             }
-            //             game.set_board(board_data);
-            //             action = GameAction::HandleMessage;
-            //             game.set_dirty();
-            //         } else {
-            //             if msg.mentions_user_id(TOPAZ_ID) {
-            //                 game.needs_action();
-            //             } else if msg.mentions.len() != 0 {
-            //                 game.waiting();
-            //             }
-            //             let split: Vec<_> = msg.content.split(" | ").collect();
-            //             if let Some(data) = split.get(0) {
-            //                 if split.len() > 1 && PTN_MOVE.is_match(data) {
-            //                     match game.try_apply_move(data) {
-            //                         Ok(()) => {
-            //                             action = GameAction::HandleMessage;
-            //                             game.set_dirty();
-            //                         }
-            //                         Err(e) => {
-            //                             dbg!(e);
-            //                             action = GameAction::RequestLink;
-            //                         }
-            //                     }
-            //                 } else if game.is_topaz_move() {
-            //                     action = GameAction::HandleMessage;
-            //                     game.set_dirty();
-            //                 }
-            //             }
-            //         }
-            //     }
-            // }
-        }
-        match action {
-            // Hack to avoid locking across the blocking async calls
-            GameAction::HandleMessage => {
-                {
-                    // let mut game = ACTIVE_GAMES
-                    //     .lock()
-                    //     .unwrap()
-                    //     .get(&msg.channel_id)
-                    //     .unwrap()
-                    //     .get_copy();
-                    // let channel = msg.channel_id;
-                    // let _ = game.do_message(&context, msg).await;
-                    // ACTIVE_GAMES.lock().unwrap().insert(channel, game);
-                    return;
-                }
-                // let _ = game.do_message(context, msg).await;
-            }
-            GameAction::RequestLink => {
-                let message = serenity::builder::CreateMessage::new().content("!tak link");
-                let _msg = msg.channel_id.send_message(&context, message).await;
-                return;
-            }
-            GameAction::None => {}
-        }
-        // if msg.content.starts_with("!topaz") {}
-        // if msg.mentions.iter().find(|x| x.id == TOPAZ_ID).is_some() {
-        //     // dbg!(context.http.get_channel);
-        // }
         if msg.author.bot {
             return;
         }
@@ -142,6 +76,15 @@ impl EventHandler for Handler {
             react(&context, &msg, "👍").await;
             if let Err(e) = handle_tinue_req(&context, &msg).await {
                 tracing::warn!("Error handling tinue request: {}", e);
+                react(&context, &msg, "❌").await;
+            }
+        } else if msg.content.starts_with("!analyze_ptn")
+            || msg.content.starts_with("!topaz_analyze")
+        {
+            tracing::debug!("Running Analysis...");
+            react(&context, &msg, "👍").await;
+            if let Err(e) = handle_analysis_req(&context, &msg).await {
+                tracing::warn!("Error handling analysis request: {}", e);
                 react(&context, &msg, "❌").await;
             }
         } else if msg.content.starts_with("!puzzle") {
@@ -272,74 +215,6 @@ impl EventHandler for Handler {
                 tracing::warn!("Unable to find topaz version, maybe Cargo location not supplied?");
             }
         }
-        // } else if msg.content.starts_with("!convert") {
-        //     let split = msg.content.split("/").last().unwrap_or("");
-        //     let text = decompress_uri(split);
-        //     // let text = decompress_uri(&str_to_u32_vec(split));
-        //     // let text = lz_str::compress_uri(&text)
-        //     let _ = msg
-        //         .reply(
-        //             &context,
-        //             text.unwrap_or_else(|| "Sorry, unknown conversion".to_string()),
-        //         )
-        //         .await;
-        // }
-    }
-    // async fn ready(&self, c: Context, ready: Ready) {
-    //     tracing::debug!("{} is connected!", ready.user.name);
-    //     for g in ready.guilds {
-    //         let channels = c.http.get_channels(g.id).await;
-    //         if let Ok(channels) = channels {
-    //             for chan in channels {
-    //                 if chan.name().contains(SHORT_NAME) {
-    //                     let _ = add_channel(&c, &chan).await;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-}
-
-// async fn add_channel(context: &Context, chan: &GuildChannel) {
-//     dbg!("New channel below!");
-//     let mut game = AsyncGameState::default();
-//     if let Some(message_id) = chan.last_message_id {
-//         // Try to determine if it is our move or not
-//         let get_messages = serenity::builder::GetMessages::new()
-//             .around(message_id)
-//             .limit(5);
-//         let messages = chan.id.messages(&context.http, get_messages).await;
-//         if let Ok(messages) = messages {
-//             // This reads most recent first
-//             for msg in messages {
-//                 if msg.author.id != TAK_BOT_ID {
-//                     continue;
-//                 }
-//                 if msg.mentions_user_id(TOPAZ_ID) {
-//                     game.needs_action();
-//                     let _ = AsyncGameState::request_link(&context, chan.id).await;
-//                     break;
-//                 } else if msg.mentions.len() != 0 {
-//                     game.waiting();
-//                     break;
-//                 }
-//                 dbg!(msg.content);
-//             }
-//             if game.is_unknown_state() {
-//                 let _ = AsyncGameState::request_redraw(&context, chan.id).await;
-//             }
-//         }
-//     }
-//     ACTIVE_GAMES.lock().unwrap().insert(chan.id, game);
-//     dbg!(chan.name());
-// }
-
-fn get_size(game: &TakGame) -> usize {
-    match game {
-        TakGame::Standard5(board) => 5,
-        TakGame::Standard6(board) => 6,
-        TakGame::Standard7(board) => 7,
-        _ => 6,
     }
 }
 
@@ -534,6 +409,204 @@ fn parse_ninja_link(details: &str) -> Result<String> {
         Ok(decompressed)
     } else {
         Err(anyhow::anyhow!("Bad ninja link"))
+    }
+}
+
+fn sigmoid(x: f32) -> f32 {
+    let ex = std::f32::consts::E.powf(x);
+    ex / (1.0 + ex)
+}
+
+async fn handle_analysis_req(context: &serenity::client::Context, message: &Message) -> Result<()> {
+    use std::fmt::Write;
+    let req = TinueRequest::new(&message.author.name, &message.content);
+    let start_time = time::Instant::now();
+    let ptn = req.get_ptn_string().await?;
+    let (game, moves) = parse_game(&ptn).ok_or_else(|| anyhow!("Unable to parse game"))?;
+    let game = if let TakGame::Standard6(game) = game {
+        game
+    } else {
+        anyhow::bail!("Sizes other than 6 not supported.")
+    };
+    anyhow::ensure!(game.komi() == 4, "Komi != 2");
+    let table = HashTable::new(2 << 20);
+    const MAX_MILLIS: u64 = 8_000;
+    let mut out = String::new();
+    // let mut out = std::fs::OpenOptions::new()
+    //     .create(true)
+    //     .write(true)
+    //     .truncate(true)
+    //     .open("analysis.ptn")
+    //     .unwrap();
+    let mut board = Board6::new().with_komi(4);
+    if game != board {
+        anyhow::bail!("Tried to start with initial tps (?), unsupported for now");
+    }
+    let mut info = SearchInfo::new(22, &table)
+        .time_bank(TimeBank::flat(MAX_MILLIS))
+        .set_max_nodes(500_000, 750_000)
+        .quiet(true);
+    // let mut eval = eval::Weights6::default();
+    let ptn_header: Vec<&str> = ptn
+        .lines()
+        .take_while(|line| line.starts_with("["))
+        .collect();
+    for line in ptn_header {
+        writeln!(&mut out, "{}", line)?;
+    }
+    let mut eval = topaz_tak::eval::NNUE6::default();
+    let mut outcomes = Vec::new();
+    for mv in moves.iter().copied() {
+        info.start_search(board.ply());
+        let outcome = topaz_tak::search::search(&mut board, &mut eval, &mut info).unwrap();
+        outcomes.push(outcome);
+        board.do_move(mv);
+    }
+    let mut board = Board6::new().with_komi(4);
+    for (idx, (outcome, mv)) in outcomes.iter().zip(moves.iter().copied()).enumerate() {
+        if idx % 2 == 0 {
+            // Need number
+            write!(&mut out, "{}. ", idx / 2 + 1)?;
+        }
+        let mut mark = "";
+        let next_outcome = outcomes.get(idx + 1);
+
+        let pv: Vec<_> = outcome
+            .pv
+            .clone()
+            .into_iter()
+            .map(|x| x.to_ptn::<Board6>())
+            .take(6)
+            .collect();
+
+        if let Some(next) = next_outcome {
+            let mut win_pct = sigmoid(next.score() as f32 / 400.0);
+            // let mut win_pct = (next.score() as f32 / 500.0).clamp(-1.0, 1.0);
+            // Backwards because we are looking at the *next* eval
+            if board.side_to_move() == Color::White {
+                win_pct = 1.0 - win_pct;
+            }
+            // win_pct = (win_pct + 1.0) / 2.0;
+            win_pct *= 100.0;
+            if outcome
+                .best_move()
+                .map(|x| x.trim_end_matches(r"*").to_string())
+                != Some(mv.to_ptn::<Board6>().trim_end_matches(r"*").to_string())
+            {
+                // Did not play the engine move
+                let next_score = -1 * next.score();
+                let score = outcome.score();
+                let diff = (next_score - score).abs();
+                let mult = if score.abs() < 500 {
+                    1
+                } else if score.abs() < 1200 {
+                    2
+                } else {
+                    3
+                };
+                // dbg!(mv.to_ptn::<Board6>());
+                // dbg!(outcome.score());
+                // dbg!(next_score);
+                if false {
+                } else if next_score > score && diff > mult * 100 {
+                    mark = "!!";
+                } else if next_score > score && diff > mult * 35 {
+                    mark = "!";
+                } else if next_score < score && diff > mult * 250 {
+                    mark = "??";
+                } else if next_score < score && diff > mult * 90 {
+                    mark = "?";
+                }
+            }
+            write!(
+                &mut out,
+                "{}{} {{{:.1}%, pv {}}} ",
+                mv.to_ptn::<Board6>(),
+                mark,
+                win_pct,
+                pv.join(" ")
+            )?;
+        } else {
+            write!(
+                &mut out,
+                "{} {{pv {}}}",
+                mv.to_ptn::<Board6>(),
+                pv.join(" ")
+            )?;
+        }
+
+        if idx % 2 == 1 {
+            writeln!(&mut out, "")?;
+        }
+
+        board.do_move(mv);
+
+        if board.game_result().is_some() {
+            break;
+        }
+    }
+    let plot = graph::generate_graph(out.as_bytes());
+    let white_name = WHITE_RE
+        .find(&ptn)
+        .map(|mat| mat.as_str())
+        .unwrap_or("WHITE");
+    let black_name = BLACK_RE
+        .find(&ptn)
+        .map(|mat| mat.as_str())
+        .unwrap_or("BLACK");
+    let ptn_ninja_message = send_ninja_short_link(&out).await?;
+    if let Ok(plot) = plot {
+        let create_attach = serenity::builder::CreateAttachment::bytes(plot, "plot.png");
+        let create_message = serenity::builder::CreateMessage::new().content(format!(
+            "Finished analyzing {} vs {} in {:.1}s. {}",
+            white_name,
+            black_name,
+            start_time.elapsed().as_secs_f32(),
+            ptn_ninja_message,
+        ));
+        message
+            .channel_id
+            .send_files(context, [create_attach], create_message)
+            .await?;
+    } else {
+        let create_message = serenity::builder::CreateMessage::new().content(format!(
+            "Failed generating plot. Finished analyzing {} vs {} in {:.1}s. {}",
+            white_name,
+            black_name,
+            start_time.elapsed().as_secs_f32(),
+            ptn_ninja_message,
+        ));
+        message
+            .channel_id
+            .send_message(context, create_message)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn send_ninja_short_link(analysis: &str) -> Result<String> {
+    use hyper::body::HttpBody;
+    let json = serenity::json::json!({
+        "ptn": analysis
+    });
+    let req = HTTP_CLIENT
+        .request(
+            hyper::Request::builder()
+                .method(hyper::Method::POST)
+                .uri("https://url.ptn.ninja/short")
+                .header("content-type", "application/json")
+                .body(hyper::Body::from(json.to_string()))?,
+        )
+        .await?;
+    let mut body = req.into_body();
+    let data = body.data().await;
+    if let Some(data) = data {
+        dbg!(&data);
+        let data = data?;
+        let data = str::from_utf8(&data)?;
+        Ok(data.to_string())
+    } else {
+        anyhow::bail!("No response?");
     }
 }
 
@@ -831,7 +904,6 @@ fn parse_game(full_ptn: &str) -> Option<(TakGame, Vec<GameMove>)> {
         moves.push(mv);
         color = !color;
     }
-    // TODO Komi
     let mut komi = 0;
     if let Some(k) = meta.get("Komi") {
         komi = match k.as_str() {
@@ -844,9 +916,6 @@ fn parse_game(full_ptn: &str) -> Option<(TakGame, Vec<GameMove>)> {
             "3" => 6,
             _ => 0,
         };
-        // if let Ok(val) = k.parse::<u8>() {
-        //     komi = val * 2;
-        // }
     }
     if let Some(tps) = meta.get("TPS") {
         tracing::debug!("TPS: {}", tps);
