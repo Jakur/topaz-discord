@@ -286,6 +286,18 @@ async fn react(context: &Context, msg: &Message, unicode: &str) {
     }
 }
 
+/** Attempts to retrieve the author's guild nickname, nickname - and if that fails, returns the normal name of the author. */
+async fn get_author_nickname(context: &Context, msg: &Message) -> String {
+    let nick_name = match msg.guild_id {
+        Some(guild_id) => msg.author.nick_in(context, guild_id).await,
+        None => msg.author_nick(context).await,
+    };
+    match nick_name {
+        Some(nick_name) => nick_name,
+        None => msg.author.name.clone(),
+    }
+}
+
 fn main() {
     // use std::fmt::Write;
     dotenv::dotenv().expect("Failed to load .env file");
@@ -611,7 +623,8 @@ async fn send_ninja_short_link(analysis: &str) -> Result<String> {
 }
 
 async fn handle_tinue_req(context: &serenity::client::Context, message: &Message) -> Result<()> {
-    let req = TinueRequest::new(&message.author.name, &message.content);
+    let author_nickname = get_author_nickname(&context, &message).await;
+    let req = TinueRequest::new(&author_nickname, &message.content);
     let start_time = time::Instant::now();
     let from_tps = TakGame::try_from_tps(
         message
@@ -663,7 +676,7 @@ async fn handle_tinue_req(context: &serenity::client::Context, message: &Message
     let duration = time::Instant::now().duration_since(start_time);
     let message_string = format!(
         "Sure thing, {}! Completed in {} ms.\nTinue: {}\nRoad: {}\nTimeout: {}",
-        message.author.name,
+        req.sender,
         duration.as_millis(),
         printable(tinue),
         printable(road),
